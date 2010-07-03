@@ -1,7 +1,11 @@
 #!/usr/bin/env python
 import math
 
-class ParamError(Exception): pass
+class ParamError(Exception):
+    """This error will be raised if a parameter to the function does not
+    validate ok.
+    """
+    pass
 
 def build_move_list(
             steps, distance,
@@ -16,22 +20,36 @@ def build_move_list(
 
     Here is a simple doctest block:
 
-        >>> import math
-        >>> len(build_move_list(180,600))
+        >>> len(build_move_list(180,600,cumulative=False))
         180
-        >>> sum(build_move_list(180,600))
+        >>> sum(build_move_list(180,600,cumulative=False))
         600
+        >>> build_move_list(180,600,cumulative=True)[-1] == 600
+        True
 
-    @type  steps:    int
-    @param steps:    The number of iterations during which the movement shall
-                     be made. Or in other words, the lenght of the resulting
-                     list.
+    @type  steps:   int
+    @param steps:   The number of iterations during which the movement shall
+                    be made. Or in other words, the lenght of the resulting
+                    list.
     @type  distance: int
     @param distance: The distance that should be covered by the smooth
-                     movment.
-    @rtype:          list if int
-    @return:         A list where the lenght of the list is C{steps} and where
-                     the sum of all elements in the list is C{distance}.
+                    movment.
+    @type  accelerationpart: int
+    @param accelerationpart: Part in percent of L{steps} where the
+                    acceleration should take place.
+    @type  retardationpart: int
+    @param retardationpart: Part in percent of L{steps} where the retardation
+                    should take place.
+    @type  cumulative: bool
+    @param cumulative: This defaults to False which means that every value in
+                    the L{steps}-list is the distance to move in every step.
+                    If its True then each value will be the distance from the
+                    starting point up until this step.
+    @rtype:         list of int
+    @return:        A list where the lenght of the list is L{steps}. All
+                    values in the list describes the movement.
+                    See L{cumulative} and the other param desriptions for
+                    more information.
     """
     if not 0<=accelerationpart<=100:
         raise ParamError('Accelerationpart has to be a % value from 0 to 100')
@@ -44,15 +62,31 @@ def build_move_list(
     ret_part = steps*retardationpart/100
     mid_part = steps-acc_part-ret_part
 
-    move_list = (
+    # Calculate the shape of the "speedcurve"
+    speedcurve = (
             [1-math.cos(x*math.pi/acc_part) for x in range(acc_part)] +
             [2]*mid_part +
             [1-math.cos(math.pi+x*math.pi/ret_part) for x in range(ret_part)])
 
-    factor = distance/sum(move_list)
-    move_list = [round(sum(move_list[:1+x])*factor) for x in range(steps)]
-    move_list[-1] = distance
+    # Calculate factor by which all values in the "speedcurve" should be
+    # multiplied to sum up to the full distance
+    factor = distance/sum(speedcurve)
+
+    # If the values should be multiplied and rounded one after the other then
+    # we would easily get the wrong answer at the end. So instead we do the
+    # following and summarize all values up to the actual step and then
+    # multiply that before rounding. In this way we make sure the last value
+    # in move_list will be equal to distance!
+    move_list = [int(round(sum(speedcurve[:1+x])*factor))
+                 for x in range(steps)]
+    
+    if cumulative:
+        return move_list
+    
+    # Prepend the list with a zero to be able to make the final list
+    # comprehension in an easy way.
     move_list.insert(0,0)
+
     return [move_list[x+1]-move_list[x] for x in range(steps)]
 
 if __name__ == '__main__':
@@ -63,9 +97,15 @@ if __name__ == '__main__':
     parser.add_option('-a','--accelerationpart', type='int',default=50)
     parser.add_option('-r','--retardationpart', type='int',default=50)
     parser.add_option('-c','--cumulative', action='store_true' ,default=False)
+    parser.add_option('-t','--doctest', action='store_true' ,default=False)
 
     (options, args) = parser.parse_args()
 
+    if options.doctest:
+        import doctest, sys
+        doctest.testmod(verbose=True)
+        sys.exit()
+        
     for x in build_move_list(
                 options.steps,
                 options.distance,
